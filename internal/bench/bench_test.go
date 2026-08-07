@@ -15,8 +15,14 @@ func TestRunMeasuresEachDifficulty(t *testing.T) {
 		t.Fatalf("got %d samples, want one per difficulty", len(samples))
 	}
 	for _, s := range samples {
-		if s.AvgHashes < 1 || s.AvgElapsed <= 0 {
+		// Only hashes are asserted, not elapsed time: at these difficulties a
+		// block is found in microseconds, which is below the clock granularity
+		// on Windows, so a legitimate run can measure as exactly zero.
+		if s.AvgHashes < 1 {
 			t.Errorf("difficulty %d reported no work: %+v", s.Difficulty, s)
+		}
+		if s.Runs != 2 || s.Workers != 1 {
+			t.Errorf("sample does not record how it was measured: %+v", s)
 		}
 	}
 	// Harder targets cost more. Mining is random, so this could in principle

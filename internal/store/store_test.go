@@ -50,6 +50,32 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 	}
 }
 
+// Hand-editing the file on Windows tends to add a UTF-8 byte order mark, which
+// is not valid JSON. Tolerate it: the tamper experiment asks users to edit this
+// file by hand, and a BOM is not tampering.
+func TestLoadToleratesAByteOrderMark(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chain.json")
+	s := New(path)
+	if err := s.Save(sampleBlocks(), nil); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append([]byte{0xEF, 0xBB, 0xBF}, raw...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, found, err := s.Load()
+	if err != nil || !found {
+		t.Fatalf("a file with a BOM must still load: found=%v err=%v", found, err)
+	}
+	if len(loaded.Blocks) != 2 {
+		t.Errorf("loaded %d blocks, want 2", len(loaded.Blocks))
+	}
+}
+
 // First run: no file yet. That is normal, not a failure.
 func TestLoadMissingFileIsNotAnError(t *testing.T) {
 	_, found, err := New(filepath.Join(t.TempDir(), "absent.json")).Load()

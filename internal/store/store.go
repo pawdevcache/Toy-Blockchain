@@ -8,6 +8,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,11 @@ func (s *Store) Load() (data File, found bool, err error) {
 	if err != nil {
 		return File{}, false, fmt.Errorf("reading %s: %w", s.path, err)
 	}
+	// Windows editors (Notepad, PowerShell's Set-Content) prepend a UTF-8 byte
+	// order mark. It is invalid JSON, so strip it rather than reject a file a
+	// user legitimately hand-edited, which is exactly what the tamper
+	// experiment in the report asks them to do.
+	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 	if err := json.Unmarshal(raw, &data); err != nil {
 		return File{}, false, fmt.Errorf("%s is not valid chain JSON: %w", s.path, err)
 	}
