@@ -1,0 +1,10 @@
+# Keep the build context small and reproducible: everything the compiler does
+# not need stays out of the image.
+.git
+.gitignore
+bin/
+data/
+.env
+docs/
+*.md
+!README.md

@@ -1,0 +1,28 @@
+# The chain is a CLI, not a long-running server, so this file is here to run
+# one-off commands with the data volume and configuration already wired up:
+#
+#   docker compose run --rm tbc faucet alice 100
+#   docker compose run --rm tbc mine
+#   docker compose run --rm tbc validate
+#
+# `docker compose up` would run the default command (print) and exit, which is
+# correct behaviour for a CLI, not a crash.
+
+services:
+  tbc:
+    build: .
+    image: toychain/tbc:latest
+    # Values default to those in the Dockerfile / config package; a local .env
+    # overrides them without rebuilding the image.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TBC_DATA_FILE: /data/chain.json
+    volumes:
+      - chain-data:/data
+    # A toy chain has no network peers, so it needs no network at all.
+    network_mode: none
+
+volumes:
+  chain-data:

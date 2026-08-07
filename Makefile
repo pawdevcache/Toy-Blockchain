@@ -3,7 +3,7 @@
 BINARY := tbc
 PKG    := ./cmd/tbc
 
-.PHONY: build test fmt vet check run clean
+.PHONY: build test fmt vet check run clean docker docker-run
 
 build:            ## Compile the CLI into ./bin
 	go build -o bin/$(BINARY) $(PKG)
@@ -21,6 +21,12 @@ check: fmt vet test  ## What CI would run
 
 run: build        ## Build then run, e.g. make run ARGS="print"
 	./bin/$(BINARY) $(ARGS)
+
+docker:           ## Build the image (vet and tests run inside the build)
+	docker build -t toychain/tbc .
+
+docker-run: docker  ## Run a command in the image, e.g. make docker-run ARGS="mine"
+	docker run --rm -v chain-data:/data toychain/tbc $(ARGS)
 
 clean:
 	rm -rf bin data
