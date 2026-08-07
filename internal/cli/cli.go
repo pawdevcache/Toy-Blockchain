@@ -14,6 +14,7 @@ import (
 	"toychain/internal/chain"
 	"toychain/internal/config"
 	"toychain/internal/store"
+	"toychain/internal/wallet"
 )
 
 // command is one CLI verb. Declaring them in a table means the help text and the
@@ -26,18 +27,22 @@ type command struct {
 	run     func(*app, []string) error
 }
 
-// app is one command's worth of state: the loaded chain plus where to print.
+// app is one command's worth of state: the loaded chain, the local keystore,
+// and where to print.
 type app struct {
-	cfg   config.Config
-	chain *chain.Chain
-	store *store.Store
-	out   io.Writer
+	cfg    config.Config
+	chain  *chain.Chain
+	store  *store.Store
+	wallet *wallet.Keystore
+	out    io.Writer
 }
 
 func commands() []command {
 	return []command{
-		{"faucet", "<address> <amount>", "mint coins into an account (toy only)", true, (*app).faucet},
-		{"send", "<from> <to> <amount>", "queue a transfer into the pending pool", true, (*app).send},
+		{"keygen", "<label>", "create a key pair and show its address", false, (*app).keygen},
+		{"keys", "", "list the key pairs in the local keystore", false, (*app).keys},
+		{"faucet", "<label|address> <amount>", "mint coins into an account (toy only)", true, (*app).faucet},
+		{"send", "<from-label> <to> <amount>", "sign and queue a transfer", true, (*app).send},
 		{"mine", "", "mine the pending transactions into a new block", true, (*app).mine},
 		{"print", "", "print the chain, newest block last", false, (*app).print},
 		{"validate", "", "re-check the whole chain and report the first fault", false, (*app).validate},
@@ -92,6 +97,7 @@ func parseFlags(args []string, out io.Writer, cfg config.Config) (config.Config,
 	fs.IntVar(&cfg.Difficulty, "difficulty", cfg.Difficulty, "leading zero hex digits a block hash must have")
 	fs.IntVar(&cfg.MaxTxPerBlock, "max-tx", cfg.MaxTxPerBlock, "maximum transactions per block, reward included")
 	fs.StringVar(&cfg.DataFile, "data", cfg.DataFile, "path to the chain file")
+	fs.StringVar(&cfg.KeyFile, "keys", cfg.KeyFile, "path to the local keystore")
 	fs.StringVar(&cfg.MinerAddress, "miner", cfg.MinerAddress, "account that receives the block reward")
 	fs.Int64Var(&cfg.MiningReward, "reward", cfg.MiningReward, "coins minted per mined block")
 
@@ -115,7 +121,12 @@ func open(cfg config.Config, out io.Writer) (*app, error) {
 			return nil, fmt.Errorf("%s holds a chain that no longer validates: %w", s.Path(), err)
 		}
 	}
-	return &app{cfg: cfg, chain: c, store: s, out: out}, nil
+
+	ks, err := wallet.Open(cfg.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &app{cfg: cfg, chain: c, store: s, wallet: ks, out: out}, nil
 }
 
 func usage(out io.Writer, cfg config.Config) {
@@ -128,9 +139,10 @@ func usage(out io.Writer, cfg config.Config) {
 		"  -max-tx     %-6d maximum transactions per block\n"+
 		"  -reward     %-6d coins minted per mined block\n"+
 		"  -miner      %-6s account paid the block reward\n"+
-		"  -data       %s\n\nExample:\n"+
+		"  -data       %s\n  -keys       %s\n\nExample:\n"+
+		"  tbc keygen alice && tbc keygen bob\n"+
 		"  tbc faucet alice 100 && tbc mine && tbc send alice bob 30 && tbc mine && tbc validate\n",
-		cfg.Difficulty, cfg.MaxTxPerBlock, cfg.MiningReward, cfg.MinerAddress, cfg.DataFile)
+		cfg.Difficulty, cfg.MaxTxPerBlock, cfg.MiningReward, cfg.MinerAddress, cfg.DataFile, cfg.KeyFile)
 }
 
 // parseAmount converts a command-line amount, rejecting anything that is not a

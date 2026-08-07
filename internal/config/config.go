@@ -52,6 +52,7 @@ func Default() Config {
 		Difficulty:    4,
 		MaxTxPerBlock: 10,
 		DataFile:      "data/chain.json",
+		KeyFile:       "data/keys.json",
 		MinerAddress:  "miner",
 		MiningReward:  50,
 	}
@@ -79,6 +80,7 @@ func Load(envPath string) (Config, error) {
 	}
 	c.MiningReward = int64(reward)
 	c.DataFile = envStr(EnvDataFile, c.DataFile)
+	c.KeyFile = envStr(EnvKeyFile, c.KeyFile)
 	c.MinerAddress = envStr(EnvMinerAddress, c.MinerAddress)
 
 	return c, c.Validate()
@@ -94,6 +96,8 @@ func (c Config) Validate() error {
 		return fmt.Errorf("max transactions per block must be at least 1, got %d", c.MaxTxPerBlock)
 	case c.DataFile == "":
 		return fmt.Errorf("data file path must not be empty")
+	case c.KeyFile == "":
+		return fmt.Errorf("key file path must not be empty")
 	case c.MinerAddress == "":
 		return fmt.Errorf("miner address must not be empty")
 	case c.MiningReward < 0:

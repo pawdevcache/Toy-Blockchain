@@ -50,6 +50,7 @@ func TestValidate(t *testing.T) {
 		"difficulty too high": func(c *Config) { c.Difficulty = MaxDifficulty + 1 },
 		"empty block":         func(c *Config) { c.MaxTxPerBlock = 0 },
 		"no data file":        func(c *Config) { c.DataFile = "" },
+		"no key file":         func(c *Config) { c.KeyFile = "" },
 		"no miner address":    func(c *Config) { c.MinerAddress = "" },
 		"negative reward":     func(c *Config) { c.MiningReward = -1 },
 	}

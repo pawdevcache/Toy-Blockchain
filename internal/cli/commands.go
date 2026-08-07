@@ -14,39 +14,93 @@ import (
 	"toychain/internal/ledger"
 )
 
-// faucet mints coins into an account so a fresh chain has money to move.
+// keygen creates a key pair and remembers it under a friendly label. The chain
+// only ever sees the address; the label is a local convenience.
+func (a *app) keygen(args []string) error {
+	if err := wantArgs(args, 1, "keygen <label>"); err != nil {
+		return err
+	}
+	pair, err := a.wallet.Create(args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "created key %q\n  address %s\n  stored in %s (keep this file private)\n",
+		args[0], pair.Address(), a.cfg.KeyFile)
+	return nil
+}
+
+// keys lists the local keystore alongside confirmed balances.
+func (a *app) keys(args []string) error {
+	if err := wantArgs(args, 0, "keys"); err != nil {
+		return err
+	}
+	entries, err := a.wallet.Entries()
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(a.out, "no keys yet: try 'tbc keygen alice'")
+		return nil
+	}
+	for _, e := range entries {
+		fmt.Fprintf(a.out, "%-12s %s  %d\n", e.Label, e.Address, a.chain.Balance(e.Address))
+	}
+	return nil
+}
+
+// faucet mints coins into an account so a fresh chain has money to move. The
+// target may be a label from the keystore or a raw address.
 func (a *app) faucet(args []string) error {
-	if err := wantArgs(args, 2, "faucet <address> <amount>"); err != nil {
+	if err := wantArgs(args, 2, "faucet <label|address> <amount>"); err != nil {
 		return err
 	}
 	amount, err := parseAmount(args[1])
 	if err != nil {
 		return err
 	}
-	if err := a.chain.Faucet(args[0], amount); err != nil {
+	to := a.wallet.Resolve(args[0])
+	if err := a.chain.Faucet(to, amount); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "queued: %d coins minted for %s (mine a block to confirm)\n", amount, args[0])
+	fmt.Fprintf(a.out, "queued: %d coins minted for %s (mine a block to confirm)\n", amount, describe(args[0], to))
 	return nil
 }
 
-// send queues a transfer. It is checked against confirmed balances plus the
-// pending pool immediately, so a bad transfer is refused here and not silently
-// carried until mining time.
+// send signs a transfer with the sender's key and queues it. The signature is
+// what authorises the spend: without the private key behind the sending address,
+// no transfer can be produced at all.
 func (a *app) send(args []string) error {
-	if err := wantArgs(args, 3, "send <from> <to> <amount>"); err != nil {
+	if err := wantArgs(args, 3, "send <from-label> <to> <amount>"); err != nil {
 		return err
 	}
 	amount, err := parseAmount(args[2])
 	if err != nil {
 		return err
 	}
-	tx := ledger.NewTransfer(args[0], args[1], amount, time.Now().UnixNano())
+	sender, err := a.wallet.KeyPair(args[0])
+	if err != nil {
+		return err
+	}
+
+	to := a.wallet.Resolve(args[1])
+	// Sign sets the sender from the key itself, so a transfer can never claim
+	// an address its signer does not control.
+	tx := sender.Sign(ledger.NewTransfer("", to, amount, time.Now().UnixNano()))
 	if err := a.chain.AddTransaction(tx); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "queued: %s\n  id %s\n", tx, tx.ID())
+	fmt.Fprintf(a.out, "queued and signed: %s -> %s : %d\n  id %s\n",
+		describe(args[0], tx.From), describe(args[1], to), amount, tx.ID())
 	return nil
+}
+
+// describe renders "label (address)" when the two differ, so output stays
+// readable without hiding what actually went on the chain.
+func describe(typed, address string) string {
+	if typed == address {
+		return address
+	}
+	return fmt.Sprintf("%s (%s)", typed, address)
 }
 
 // mine performs the proof of work. Ctrl-C cancels the search cleanly, leaving
@@ -121,21 +175,23 @@ func (a *app) balance(args []string) error {
 		return fmt.Errorf("expected balance [address]")
 	}
 	if len(args) == 1 {
-		fmt.Fprintf(a.out, "%-20s %d\n", args[0], a.chain.Balance(args[0]))
+		address := a.wallet.Resolve(args[0])
+		fmt.Fprintf(a.out, "%-20s %d\n", describe(args[0], address), a.chain.Balance(address))
 		return nil
 	}
 
 	accounts := a.chain.Accounts()
 	if len(accounts) == 0 {
-		fmt.Fprintln(a.out, "no accounts yet: try 'tbc faucet alice 100' then 'tbc mine'")
+		fmt.Fprintln(a.out, "no accounts yet: try 'tbc keygen alice', 'tbc faucet alice 100', 'tbc mine'")
 		return nil
 	}
 	var total int64
 	for _, acc := range accounts {
-		fmt.Fprintf(a.out, "%-20s %d\n", acc.Address, acc.Balance)
+		// Annotate any address this keystore has a label for.
+		fmt.Fprintf(a.out, "%-20s %-12s %d\n", acc.Address, a.wallet.LabelFor(acc.Address), acc.Balance)
 		total += acc.Balance
 	}
-	fmt.Fprintf(a.out, "%-20s %d\n", "total supply", total)
+	fmt.Fprintf(a.out, "%-20s %-12s %d\n", "total supply", "", total)
 	return nil
 }
 
