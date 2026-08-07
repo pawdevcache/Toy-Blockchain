@@ -49,6 +49,7 @@ func commands() []command {
 		{"balance", "[label|address]", "show confirmed balances", false, (*app).balance},
 		{"pending", "", "list transactions waiting to be mined", false, (*app).pending},
 		{"bench", "[max-difficulty] [runs] [workers]", "measure mining cost per difficulty", false, (*app).bench},
+		{"serve", "", "expose the chain over HTTP (see -addr)", false, (*app).serve},
 	}
 }
 
@@ -98,6 +99,7 @@ func parseFlags(args []string, out io.Writer, cfg config.Config) (config.Config,
 	fs.IntVar(&cfg.MaxTxPerBlock, "max-tx", cfg.MaxTxPerBlock, "maximum transactions per block, reward included")
 	fs.StringVar(&cfg.DataFile, "data", cfg.DataFile, "path to the chain file")
 	fs.StringVar(&cfg.KeyFile, "keys", cfg.KeyFile, "path to the local keystore")
+	fs.StringVar(&cfg.HTTPAddr, "addr", cfg.HTTPAddr, "address for `tbc serve` to listen on")
 	fs.StringVar(&cfg.MinerAddress, "miner", cfg.MinerAddress, "account that receives the block reward")
 	fs.Int64Var(&cfg.MiningReward, "reward", cfg.MiningReward, "coins minted per mined block")
 

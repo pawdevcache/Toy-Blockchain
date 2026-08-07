@@ -1,0 +1,435 @@
+{
+  "info": {
+    "name": "Toy Blockchain (tbc)",
+    "description": "HTTP API for the toy blockchain. Start the node with `tbc serve`, then run this collection top to bottom: it creates keys, funds an account, mines, transfers, mines again and validates.\n\nEvery request has a test script, so `Run collection` gives you a pass/fail report.\n\nThe {{base_url}} variable defaults to http://127.0.0.1:8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8080" },
+    { "key": "alice_address", "value": "" },
+    { "key": "bob_address", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+        "description": "Is the node up, how tall is the chain, what difficulty is it mining at."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('reports status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Create key: alice",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"label\": \"alice\"\n}" },
+        "url": { "raw": "{{base_url}}/keys", "host": ["{{base_url}}"], "path": ["keys"] },
+        "description": "Generates an ed25519 key pair. The address is derived from the public key; the private key stays in the node's keystore and is never returned."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('returns an address', () => pm.expect(body.address).to.be.a('string').and.have.lengthOf(16));",
+              "pm.test('never returns a private key', () => pm.expect(pm.response.text().toLowerCase()).to.not.include('private'));",
+              "pm.collectionVariables.set('alice_address', body.address);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Create key: bob",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"label\": \"bob\"\n}" },
+        "url": { "raw": "{{base_url}}/keys", "host": ["{{base_url}}"], "path": ["keys"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('bob_address', pm.response.json().address);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. List keys",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/keys", "host": ["{{base_url}}"], "path": ["keys"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('holds two keys', () => pm.expect(pm.response.json().keys).to.have.lengthOf(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Faucet 100 to alice",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"to\": \"alice\",\n  \"amount\": 100\n}" },
+        "url": { "raw": "{{base_url}}/faucet", "host": ["{{base_url}}"], "path": ["faucet"] },
+        "description": "Mints coins so there is something to spend. 202 Accepted, not 201: the coins are queued, and only mining confirms them."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('202 Accepted (queued, not confirmed)', () => pm.response.to.have.status(202));",
+              "pm.test('says a block is needed', () => pm.expect(pm.response.json().note).to.include('mine'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Pending pool",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/pending", "host": ["{{base_url}}"], "path": ["pending"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('one transaction waiting', () => pm.expect(pm.response.json().count).to.eql(1));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Mine a block",
+      "request": {
+        "method": "POST",
+        "url": { "raw": "{{base_url}}/mine", "host": ["{{base_url}}"], "path": ["mine"] },
+        "description": "Does the proof of work. At the default difficulty of 4 this takes well under a second; raise it with `tbc -difficulty 6 serve` to feel the difference."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.test('hash meets the difficulty target', () => pm.expect(b.hash.startsWith('0'.repeat(b.difficulty))).to.be.true);",
+              "pm.test('reports the work done', () => pm.expect(b.hashes).to.be.above(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Alice's balance",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/balances/alice",
+          "host": ["{{base_url}}"],
+          "path": ["balances", "alice"],
+          "description": "Accepts a label or a raw address."
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('alice now holds 100', () => pm.expect(pm.response.json().balance).to.eql(100));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Send 30 from alice to bob",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"from\": \"alice\",\n  \"to\": \"bob\",\n  \"amount\": 30\n}" },
+        "url": { "raw": "{{base_url}}/transactions", "host": ["{{base_url}}"], "path": ["transactions"] },
+        "description": "The node signs with alice's private key. `from` must be a label it holds a key for: without the key, no valid transfer can be produced at all."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+              "pm.test('returns a transaction id', () => pm.expect(pm.response.json().transaction.id).to.have.lengthOf(64));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Mine again",
+      "request": {
+        "method": "POST",
+        "url": { "raw": "{{base_url}}/mine", "host": ["{{base_url}}"], "path": ["mine"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('chain is now 2 blocks past genesis', () => pm.expect(pm.response.json().height).to.eql(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. All balances",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/balances", "host": ["{{base_url}}"], "path": ["balances"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "const alice = body.accounts.find(a => a.label === 'alice');",
+              "const bob = body.accounts.find(a => a.label === 'bob');",
+              "pm.test('alice has 70', () => pm.expect(alice.balance).to.eql(70));",
+              "pm.test('bob has 30', () => pm.expect(bob.balance).to.eql(30));",
+              "pm.test('supply is 100 faucet + 2 rewards', () => pm.expect(body.total_supply).to.eql(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Validate the chain",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/chain/validate", "host": ["{{base_url}}"], "path": ["chain", "validate"] },
+        "description": "Re-checks every hash, link, Merkle root, proof of work and balance from genesis. Returns 409 with the offending block if anything was tampered with."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('chain is valid', () => pm.expect(pm.response.json().valid).to.be.true);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Full chain",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/chain", "host": ["{{base_url}}"], "path": ["chain"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const blocks = pm.response.json().blocks;",
+              "pm.test('genesis links to nothing', () => pm.expect(blocks[0].prev_hash).to.eql('0'.repeat(64)));",
+              "pm.test('each block links to the one before', () => {",
+              "  for (let i = 1; i < blocks.length; i++) {",
+              "    pm.expect(blocks[i].prev_hash).to.eql(blocks[i - 1].hash);",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. One block by height",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/blocks/1", "host": ["{{base_url}}"], "path": ["blocks", "1"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('is block 1', () => pm.expect(pm.response.json().height).to.eql(1));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: overspend (400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"from\": \"alice\",\n  \"to\": \"bob\",\n  \"amount\": 999999\n}" },
+        "url": { "raw": "{{base_url}}/transactions", "host": ["{{base_url}}"], "path": ["transactions"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('explains why', () => pm.expect(pm.response.json().error).to.include('insufficient funds'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: sender we hold no key for (404)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"from\": \"carol\",\n  \"to\": \"bob\",\n  \"amount\": 1\n}" },
+        "url": { "raw": "{{base_url}}/transactions", "host": ["{{base_url}}"], "path": ["transactions"] },
+        "description": "Without carol's private key there is no way to author a transfer from her account. This is signatures doing their job."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+              "pm.test('names the missing key', () => pm.expect(pm.response.json().error).to.include('carol'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: duplicate key label (409)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"label\": \"alice\"\n}" },
+        "url": { "raw": "{{base_url}}/keys", "host": ["{{base_url}}"], "path": ["keys"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('409 Conflict', () => pm.response.to.have.status(409));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: non-positive amount (400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"to\": \"alice\",\n  \"amount\": 0\n}" },
+        "url": { "raw": "{{base_url}}/faucet", "host": ["{{base_url}}"], "path": ["faucet"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('explains why', () => pm.expect(pm.response.json().error).to.include('positive'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: unknown field (400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"to\": \"alice\",\n  \"amount\": 1,\n  \"fee\": 2\n}" },
+        "url": { "raw": "{{base_url}}/faucet", "host": ["{{base_url}}"], "path": ["faucet"] },
+        "description": "Unknown fields are rejected rather than ignored, so a typo in a request is reported instead of silently doing something else."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error: block out of range (404)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/blocks/999", "host": ["{{base_url}}"], "path": ["blocks", "999"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+              "pm.test('says where the tip is', () => pm.expect(pm.response.json().error).to.include('tip'));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

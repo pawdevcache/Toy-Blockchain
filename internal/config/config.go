@@ -19,6 +19,7 @@ const (
 	EnvMaxTxPerBlk  = "TBC_MAX_TX_PER_BLOCK"
 	EnvDataFile     = "TBC_DATA_FILE"
 	EnvKeyFile      = "TBC_KEY_FILE"
+	EnvHTTPAddr     = "TBC_HTTP_ADDR"
 	EnvMinerAddress = "TBC_MINER_ADDRESS"
 	EnvMiningReward = "TBC_MINING_REWARD"
 )
@@ -39,6 +40,9 @@ type Config struct {
 	DataFile string
 	// KeyFile is the local keystore: private keys, never part of the chain.
 	KeyFile string
+	// HTTPAddr is where `tbc serve` listens. Loopback by default: this API has
+	// no authentication and can spend any key in the keystore.
+	HTTPAddr string
 	// MinerAddress receives the coinbase reward of blocks mined by this node.
 	MinerAddress string
 	// MiningReward is the amount minted for MinerAddress per mined block.
@@ -53,6 +57,7 @@ func Default() Config {
 		MaxTxPerBlock: 10,
 		DataFile:      "data/chain.json",
 		KeyFile:       "data/keys.json",
+		HTTPAddr:      "127.0.0.1:8080",
 		MinerAddress:  "miner",
 		MiningReward:  50,
 	}
@@ -81,6 +86,7 @@ func Load(envPath string) (Config, error) {
 	c.MiningReward = int64(reward)
 	c.DataFile = envStr(EnvDataFile, c.DataFile)
 	c.KeyFile = envStr(EnvKeyFile, c.KeyFile)
+	c.HTTPAddr = envStr(EnvHTTPAddr, c.HTTPAddr)
 	c.MinerAddress = envStr(EnvMinerAddress, c.MinerAddress)
 
 	return c, c.Validate()
@@ -98,6 +104,8 @@ func (c Config) Validate() error {
 		return fmt.Errorf("data file path must not be empty")
 	case c.KeyFile == "":
 		return fmt.Errorf("key file path must not be empty")
+	case c.HTTPAddr == "":
+		return fmt.Errorf("http address must not be empty")
 	case c.MinerAddress == "":
 		return fmt.Errorf("miner address must not be empty")
 	case c.MiningReward < 0:

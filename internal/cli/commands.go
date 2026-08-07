@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"toychain/internal/api"
 	"toychain/internal/bench"
 	"toychain/internal/chain"
 	"toychain/internal/config"
@@ -238,6 +239,24 @@ func (a *app) bench(args []string) error {
 			s.AvgElapsed.Round(time.Millisecond), s.HashRate()/1e6)
 	}
 	return nil
+}
+
+// serve exposes the chain over HTTP for clients such as Postman or curl.
+//
+// It runs until interrupted. Because it holds the chain in memory for the whole
+// session, no other tbc command should write the same data file while it runs.
+func (a *app) serve(args []string) error {
+	if err := wantArgs(args, 0, "serve"); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	fmt.Fprintf(a.out, "listening on http://%s (difficulty %d, chain %s)\n",
+		a.cfg.HTTPAddr, a.cfg.Difficulty, a.cfg.DataFile)
+	fmt.Fprintf(a.out, "try: curl http://%s/health   |   Ctrl-C to stop\n", a.cfg.HTTPAddr)
+
+	return api.New(a.cfg, a.chain, a.store, a.wallet).ListenAndServe(ctx, a.cfg.HTTPAddr)
 }
 
 // pending lists what would go into the next block.
