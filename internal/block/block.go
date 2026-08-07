@@ -20,14 +20,14 @@ import (
 // Fields are split into two groups: everything that feeds the hash, and the
 // stored Hash itself, which obviously cannot hash itself.
 type Block struct {
-	Height       uint64               `json:"height"`        // 0 for genesis, +1 per block
-	Timestamp    int64                `json:"timestamp"`     // Unix seconds, when mining started
-	Transactions []ledger.Transaction `json:"transactions"`  // the payload
-	MerkleRoot   string               `json:"merkle_root"`   // hex digest summarising Transactions
-	PrevHash     string               `json:"prev_hash"`     // hex hash of block Height-1
-	Difficulty   int                  `json:"difficulty"`    // leading zero hex digits required
-	Nonce        uint64               `json:"nonce"`         // the number the miner searched for
-	Hash         string               `json:"hash"`          // hex, NOT part of the preimage
+	Height       uint64               `json:"height"`       // 0 for genesis, +1 per block
+	Timestamp    int64                `json:"timestamp"`    // Unix seconds, when mining started
+	Transactions []ledger.Transaction `json:"transactions"` // the payload
+	MerkleRoot   string               `json:"merkle_root"`  // hex digest summarising Transactions
+	PrevHash     string               `json:"prev_hash"`    // hex hash of block Height-1
+	Difficulty   int                  `json:"difficulty"`   // leading zero hex digits required
+	Nonce        uint64               `json:"nonce"`        // the number the miner searched for
+	Hash         string               `json:"hash"`         // hex, NOT part of the preimage
 }
 
 // New assembles an unmined block: it fills in everything except Nonce and Hash,

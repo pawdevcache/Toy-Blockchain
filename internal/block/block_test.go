@@ -79,8 +79,8 @@ func TestMeetsDifficulty(t *testing.T) {
 	}{
 		{"000abc", 3, true},
 		{"000abc", 4, false},
-		{"abc", 0, true},  // difficulty 0 accepts anything (genesis)
-		{"", 1, false},    // an empty hash never satisfies a target
+		{"abc", 0, true},   // difficulty 0 accepts anything (genesis)
+		{"", 1, false},     // an empty hash never satisfies a target
 		{"0000", 5, false}, // asking for more digits than the hash has
 	}
 	for _, tc := range tests {
