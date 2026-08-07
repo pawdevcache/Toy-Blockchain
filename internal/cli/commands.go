@@ -8,7 +8,9 @@ import (
 	"os/signal"
 	"time"
 
+	"toychain/internal/bench"
 	"toychain/internal/chain"
+	"toychain/internal/config"
 	"toychain/internal/ledger"
 )
 
@@ -134,6 +136,51 @@ func (a *app) balance(args []string) error {
 		total += acc.Balance
 	}
 	fmt.Fprintf(a.out, "%-20s %d\n", "total supply", total)
+	return nil
+}
+
+// bench measures mining cost across difficulties and prints a Markdown table,
+// ready to paste into the research report. It mines throwaway blocks and never
+// touches the stored chain.
+//
+// Defaults to one worker: a single-threaded search counts every nonce from zero,
+// which is what makes the numbers comparable with the 16^difficulty prediction.
+func (a *app) bench(args []string) error {
+	maxDifficulty, runs, workers := 5, 3, 1
+	for i, target := range []*int{&maxDifficulty, &runs, &workers} {
+		if len(args) > i {
+			n, err := parseAmount(args[i])
+			if err != nil || n < 1 {
+				return fmt.Errorf("bench arguments must be positive whole numbers, got %q", args[i])
+			}
+			*target = int(n)
+		}
+	}
+	if maxDifficulty > config.MaxDifficulty {
+		return fmt.Errorf("difficulty above %d would take far too long", config.MaxDifficulty)
+	}
+
+	difficulties := make([]int, 0, maxDifficulty)
+	for d := 1; d <= maxDifficulty; d++ {
+		difficulties = append(difficulties, d)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	fmt.Fprintf(a.out, "mining %d block(s) per difficulty with %d worker(s)...\n\n", runs, workers)
+	samples, err := bench.Run(ctx, difficulties, runs, workers)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.out, "| Difficulty | Expected hashes | Avg hashes | Measured/expected | Avg time | Hash rate |")
+	fmt.Fprintln(a.out, "|---:|---:|---:|---:|---:|---:|")
+	for _, s := range samples {
+		fmt.Fprintf(a.out, "| %d | %.0f | %.0f | %.2f | %s | %.1f MH/s |\n",
+			s.Difficulty, s.Expected(), s.AvgHashes, s.Ratio(),
+			s.AvgElapsed.Round(time.Millisecond), s.HashRate()/1e6)
+	}
 	return nil
 }
 

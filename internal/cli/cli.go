@@ -43,6 +43,7 @@ func commands() []command {
 		{"validate", "", "re-check the whole chain and report the first fault", false, (*app).validate},
 		{"balance", "[address]", "show confirmed balances", false, (*app).balance},
 		{"pending", "", "list transactions waiting to be mined", false, (*app).pending},
+		{"bench", "[max-difficulty] [runs] [workers]", "measure mining cost per difficulty", false, (*app).bench},
 	}
 }
 
