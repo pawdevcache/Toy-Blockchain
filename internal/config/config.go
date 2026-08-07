@@ -18,6 +18,7 @@ const (
 	EnvDifficulty   = "TBC_DIFFICULTY"
 	EnvMaxTxPerBlk  = "TBC_MAX_TX_PER_BLOCK"
 	EnvDataFile     = "TBC_DATA_FILE"
+	EnvKeyFile      = "TBC_KEY_FILE"
 	EnvMinerAddress = "TBC_MINER_ADDRESS"
 	EnvMiningReward = "TBC_MINING_REWARD"
 )
@@ -36,6 +37,8 @@ type Config struct {
 	MaxTxPerBlock int
 	// DataFile is the JSON file the chain is saved to and reloaded from.
 	DataFile string
+	// KeyFile is the local keystore: private keys, never part of the chain.
+	KeyFile string
 	// MinerAddress receives the coinbase reward of blocks mined by this node.
 	MinerAddress string
 	// MiningReward is the amount minted for MinerAddress per mined block.

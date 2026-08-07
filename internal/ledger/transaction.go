@@ -36,6 +36,11 @@ type Transaction struct {
 	// transfers (alice -> bob 10, twice) hash differently, so each has its own
 	// ID. A production chain uses a signed per-account nonce instead.
 	Timestamp int64 `json:"timestamp"`
+
+	// PubKey and Signature authorise a transfer: hex-encoded ed25519 values,
+	// empty on a coinbase. See signature.go for how they are checked.
+	PubKey    string `json:"pubkey,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 // NewTransfer builds a normal account-to-account transaction.
@@ -63,7 +68,12 @@ func (t Transaction) Validate() error {
 		return err
 	}
 	if t.IsCoinbase() {
-		return nil // a coinbase legitimately has no sender
+		// A coinbase has no sender, so there is nobody to sign it; carrying a
+		// signature would only be a place to hide bytes.
+		if t.PubKey != "" || t.Signature != "" {
+			return fmt.Errorf("a coinbase transaction must not be signed")
+		}
+		return nil
 	}
 	if err := validAddress("sender", t.From); err != nil {
 		return err
@@ -71,17 +81,23 @@ func (t Transaction) Validate() error {
 	if t.From == t.To {
 		return fmt.Errorf("sender and recipient are the same account %q", t.From)
 	}
-	return nil
+	// A transfer is only authorised by a signature from the key that owns the
+	// sending address. Without this check, naming a sender would be the same as
+	// being them.
+	return t.VerifySignature()
 }
 
-// canonicalBytes is the exact byte sequence that gets hashed:
+// signingBytes is what the sender's key signs:
 //
-//	tx|<len(from)>:<from>|<len(to)>:<to>|<amount>|<timestamp>
+//	tx|<len(from)>:<from>|<len(to)>:<to>|<amount>|<timestamp>|<pubkey>
 //
 // Each address is length-prefixed so no address content can ever be mistaken for
 // a field separator: "a|b" and "a" + "b" cannot collide. Field order is fixed
-// here and nowhere else, which is what makes the hash reproducible.
-func (t Transaction) canonicalBytes() []byte {
+// here and nowhere else, which is what makes the encoding reproducible.
+//
+// The signature itself is excluded, for the same reason a block's hash is
+// excluded from its own preimage: a signature cannot commit to itself.
+func (t Transaction) signingBytes() []byte {
 	var b strings.Builder
 	b.WriteString("tx|")
 	writeLenPrefixed(&b, t.From)
@@ -91,7 +107,20 @@ func (t Transaction) canonicalBytes() []byte {
 	b.WriteString(strconv.FormatInt(t.Amount, 10))
 	b.WriteByte('|')
 	b.WriteString(strconv.FormatInt(t.Timestamp, 10))
+	b.WriteByte('|')
+	b.WriteString(t.PubKey)
 	return []byte(b.String())
+}
+
+// canonicalBytes is what gets hashed into the transaction ID: the signed bytes
+// plus the signature.
+//
+// Including the signature matters. The block commits to transaction IDs through
+// its Merkle root, so if the ID ignored the signature, someone could strip or
+// swap signatures inside a stored block without disturbing the root. Committing
+// to it means any such edit breaks the Merkle check like any other tamper.
+func (t Transaction) canonicalBytes() []byte {
+	return append(t.signingBytes(), "|"+t.Signature...)
 }
 
 // Hash is the raw SHA-256 of the canonical encoding. Used to build Merkle trees.
