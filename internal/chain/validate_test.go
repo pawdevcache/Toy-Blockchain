@@ -80,11 +80,25 @@ func TestTamperingIsDetectedAtEveryLevelOfCoverUp(t *testing.T) {
 		blocks[1].Transactions[1].Amount = 1_000_000
 		blocks[1].MerkleRoot = block.MerkleRoot(blocks[1].Transactions)
 		blocks[1].Hash = blocks[1].ComputeHash()
-		// The recomputed hash almost certainly no longer meets the target; even
-		// if it did, block 2 still links to the old hash. Without redoing the
-		// proof of work for this block and every block after it, the forgery is
-		// stuck. That is the property this toy shares with a real chain.
-		expectFailure(t, blocks, 1, "difficulty")
+
+		// Two outcomes are possible and both make the same point. Usually the
+		// recomputed hash no longer meets the target, so block 1 fails the
+		// difficulty check. Occasionally (1 in 16^difficulty) it meets the
+		// target anyway, and block 2 fails instead, because it still links to
+		// the hash block 1 used to have. Either way the forger has to redo the
+		// proof of work for this block and every block after it: the property
+		// this toy shares with a real chain.
+		err := Validate(blocks)
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("got %v, want a *ValidationError", err)
+		}
+		switch {
+		case ve.Height == 1 && ve.Check == "difficulty":
+		case ve.Height == 2 && ve.Check == "link":
+		default:
+			t.Errorf("blamed block %d for %q, want block 1/difficulty or block 2/link", ve.Height, ve.Check)
+		}
 	})
 
 	t.Run("re-mine the block but leave the rest of the chain alone", func(t *testing.T) {
