@@ -46,7 +46,7 @@ func commands() []command {
 		{"mine", "", "mine the pending transactions into a new block", true, (*app).mine},
 		{"print", "", "print the chain, newest block last", false, (*app).print},
 		{"validate", "", "re-check the whole chain and report the first fault", false, (*app).validate},
-		{"balance", "[address]", "show confirmed balances", false, (*app).balance},
+		{"balance", "[label|address]", "show confirmed balances", false, (*app).balance},
 		{"pending", "", "list transactions waiting to be mined", false, (*app).pending},
 		{"bench", "[max-difficulty] [runs] [workers]", "measure mining cost per difficulty", false, (*app).bench},
 	}
@@ -131,8 +131,10 @@ func open(cfg config.Config, out io.Writer) (*app, error) {
 
 func usage(out io.Writer, cfg config.Config) {
 	fmt.Fprint(out, "tbc - a toy blockchain\n\nUsage:\n  tbc [flags] <command> [arguments]\n\nCommands:\n")
+	// Wide enough for the longest argument form, so the summaries stay in a
+	// single column instead of stepping out to the right.
 	for _, c := range commands() {
-		fmt.Fprintf(out, "  %-9s %-22s %s\n", c.name, c.args, c.summary)
+		fmt.Fprintf(out, "  %-8s %-34s %s\n", c.name, c.args, c.summary)
 	}
 	fmt.Fprintf(out, "\nFlags (defaults shown, overridable in .env):\n"+
 		"  -difficulty %-6d leading zero hex digits required\n"+
