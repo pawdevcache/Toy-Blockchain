@@ -29,8 +29,10 @@ COPY --from=build --chown=65532:65532 /data /data
 USER 65532:65532
 WORKDIR /data
 
-# Persist the chain in the volume, not in the container's writable layer.
+# Persist the chain and the keystore in the volume, not in the container's
+# writable layer.
 ENV TBC_DATA_FILE=/data/chain.json
+ENV TBC_KEY_FILE=/data/keys.json
 VOLUME ["/data"]
 
 ENTRYPOINT ["/tbc"]

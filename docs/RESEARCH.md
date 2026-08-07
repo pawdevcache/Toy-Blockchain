@@ -288,41 +288,58 @@ be trusted.
 1. **No consensus among peers.** One process, one chain, no gossip, no fork
    choice. The hardest problem in the field — agreeing on an ordering with no
    coordinator and no assumption of honesty — is entirely absent.
-2. **No transaction signatures.** `send bob alice 50` succeeds no matter who
-   types it: naming a sender is the same as authorising them. Every real chain
-   requires a signature from the private key that owns the funds.
+2. **No replay protection or key management.** Signatures were added (see
+   below), but a captured transaction can still be resubmitted, because
+   uniqueness comes from a timestamp rather than a signed per-account sequence
+   number. Private keys sit unencrypted in a local file, and addresses are
+   truncated to 64 bits.
 3. **No inclusion proofs or finality.** The Merkle root is computed and verified
    but nothing uses it to prove a single transaction belongs to a block, so there
    is no light-client story. Nor is there any notion of finality: no confirmation
    depth, no checkpoint, nothing that says a block will never be reversed.
 
-### Sketch: adding signatures
+### Signatures: the sketch, and then the implementation
 
-The gap I would close first, because it is the one that makes the ledger a toy
-rather than a ledger.
+This was the gap I planned to sketch and ended up closing, so what follows is
+what the code now does rather than what it might.
 
 * **Keys.** `crypto/ed25519` from the standard library — 32-byte public keys,
-  64-byte signatures, fast verification, no parameter choices to get wrong. A
-  `tbc keygen` command writes a key file; the **address becomes the hex of the
-  public key** (or better, of its SHA-256, which shortens it and hides the key
-  until first spend).
-* **Transaction shape.** Add `PubKey` and `Signature` fields. Signing covers the
-  existing canonical bytes *excluding* the signature itself — a signature cannot
-  commit to itself, the same circularity as the block hash.
-* **Replay protection.** The timestamp currently makes each transaction unique,
-  but a signed transaction can simply be resubmitted. It would be replaced by a
-  per-account sequence number, with `State` tracking the next expected value and
-  rejecting anything out of order.
-* **Validation.** `Transaction.Validate` gains two checks — the public key hashes
-  to `From`, and the signature verifies against the canonical bytes — so every
-  path already calling it (mempool admission, block assembly, full-chain
-  validation) is covered without new call sites. Coinbase transactions stay
-  exempt, since they have no sender.
-* **Cost.** Verification is not free: roughly 30 µs per signature, so a
-  thousand-transaction block costs ~30 ms to validate. That is the argument for
-  caching verification results per transaction ID, which is what real nodes do.
+  64-byte signatures, deterministic (so no per-signature random value can leak a
+  private key, a mistake that has cost real chains real money) and no parameter
+  choices to get wrong. `tbc keygen alice` writes to a local keystore; the
+  **address is the first 16 hex characters of SHA-256 of the public key**, which
+  keeps it readable and hides the key until the account first spends.
+* **Transaction shape.** `PubKey` and `Signature` fields, hex-encoded. The signed
+  bytes *exclude* the signature — a signature cannot commit to itself, the same
+  circularity as the block hash — but the transaction **ID includes it**. That
+  second decision was not in my original sketch and turned out to matter: the
+  block commits to transaction IDs through its Merkle root, so covering the
+  signature is what stops someone stripping or swapping signatures inside a
+  stored block. Editing one byte of a stored signature now fails the same Merkle
+  check as editing an amount, which I verified by hand:
 
-The work is perhaps half a day. What it buys is the difference between "the
+  ```
+  tbc: block 2 (0000ccfaa795...) failed the merkle root check: the transactions
+  stored in this block no longer produce its Merkle root
+  ```
+
+* **Validation.** `Transaction.Validate` gained the signature check, so every
+  path already calling it — mempool admission, block assembly, full-chain
+  validation — was covered without a single new call site. That is the payoff
+  from having one place where a transaction is judged. Coinbases are exempt and,
+  more than that, are *required* to be unsigned: nobody authorises minted coins,
+  so a signature there would only be somewhere to hide bytes.
+* **Replay protection: still missing.** The timestamp makes each transaction
+  unique, but a captured transaction can be resubmitted verbatim. The fix is a
+  signed per-account sequence number, with `State` tracking the next expected
+  value. I did not build it, and it is the first thing I would add next.
+* **Cost.** Verification is not free: roughly 30 µs per signature, so a
+  thousand-transaction block costs ~30 ms to validate — and full-chain validation
+  re-verifies every signature in every block, so the cost is quadratic in chain
+  length over a node's lifetime. Real nodes cache verification results per
+  transaction ID and check signatures once, on admission. This one does not.
+
+The work took about half a day. What it buys is the difference between "the
 ledger records who paid whom" and "the ledger proves who paid whom".
 
 ---
@@ -331,11 +348,12 @@ ledger records who paid whom" and "the ledger proves who paid whom".
 
 Beyond the three differences above: the faucet mints coins on demand; the
 coinbase reward is not validated, so a block could claim any reward it liked;
-timestamps are only required not to move backwards; two concurrent `tbc mine`
-processes would race on the data file; and the Merkle implementation inherits
-Bitcoin's duplicate-transaction ambiguity without guarding against it. Each is
-listed in the README so a reader does not have to discover them by reading the
-source.
+private keys are stored unencrypted and addresses are truncated to 64 bits;
+signatures are re-verified on every validation rather than cached; timestamps are
+only required not to move backwards; two concurrent `tbc mine` processes would
+race on the data file; and the Merkle implementation inherits Bitcoin's
+duplicate-transaction ambiguity without guarding against it. Each is listed in
+the README so a reader does not have to discover them by reading the source.
 
 ---
 

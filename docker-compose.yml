@@ -19,6 +19,7 @@ services:
         required: false
     environment:
       TBC_DATA_FILE: /data/chain.json
+      TBC_KEY_FILE: /data/keys.json
     volumes:
       - chain-data:/data
     # A toy chain has no network peers, so it needs no network at all.
