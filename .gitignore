@@ -1,0 +1,13 @@
+# Compiled binaries
+/bin/
+tbc
+tbc.exe
+
+# Local runtime state: the chain database and local secrets
+/data/
+*.env
+!.env.example
+
+# Go test / coverage artefacts
+*.out
+*.test
