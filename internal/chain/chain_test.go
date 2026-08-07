@@ -140,24 +140,31 @@ func TestTransferIsOnlyConfirmedOnceMined(t *testing.T) {
 
 // FR-4 / acceptance: overspending is rejected and balances are unchanged.
 func TestAddTransactionRejectsOverspending(t *testing.T) {
-	c := mineFunded(t)
+	c, alice, bob := mineFunded(t)
 
-	if err := c.AddTransaction(ledger.NewTransfer("alice", "bob", 150, 1)); err == nil {
+	if err := c.AddTransaction(alice.pay(bob.Address(), 150, 1)); err == nil {
 		t.Fatal("sending 150 from a balance of 100 must be rejected")
 	}
-	if got := c.Balance("alice"); got != 100 {
+	if got := c.Balance(alice.Address()); got != 100 {
 		t.Errorf("alice = %d after a rejected transaction, want 100", got)
 	}
 	if len(c.Pending()) != 0 {
 		t.Error("a rejected transaction must not be queued")
 	}
+
+	// The other half of the rule: even an affordable transfer is refused unless
+	// the owner of the sending address signed it.
+	unsigned := ledger.NewTransfer(alice.Address(), bob.Address(), 10, 1)
+	if err := c.AddTransaction(unsigned); err == nil {
+		t.Error("an unsigned transfer must be rejected")
+	}
 }
 
 // Block size is honoured, and the reward occupies one of the slots.
 func TestMineRespectsMaxTransactionsPerBlock(t *testing.T) {
-	c := mineFunded(t)
+	c, alice, bob := mineFunded(t)
 	for i := 0; i < 6; i++ {
-		if err := c.AddTransaction(ledger.NewTransfer("alice", "bob", 1, int64(i))); err != nil {
+		if err := c.AddTransaction(alice.pay(bob.Address(), 1, int64(i))); err != nil {
 			t.Fatalf("queueing transfer %d: %v", i, err)
 		}
 	}
@@ -196,8 +203,8 @@ func TestCancelledMineLeavesTheChainUntouched(t *testing.T) {
 }
 
 func TestLoadRebuildsBalancesAndRejectsACorruptChain(t *testing.T) {
-	c := mineFunded(t)
-	if err := c.AddTransaction(ledger.NewTransfer("alice", "bob", 10, 1)); err != nil {
+	c, alice, bob := mineFunded(t)
+	if err := c.AddTransaction(alice.pay(bob.Address(), 10, 1)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,7 +212,7 @@ func TestLoadRebuildsBalancesAndRejectsACorruptChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading a valid chain: %v", err)
 	}
-	if got := restored.Balance("alice"); got != 100 {
+	if got := restored.Balance(alice.Address()); got != 100 {
 		t.Errorf("restored alice = %d, want 100 replayed from the blocks", got)
 	}
 	if len(restored.Pending()) != 1 {

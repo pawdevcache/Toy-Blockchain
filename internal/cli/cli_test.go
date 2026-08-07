@@ -10,13 +10,15 @@ import (
 	"toychain/internal/config"
 )
 
-// runner returns a helper that runs commands against one temporary chain file,
-// exactly as a user would in a terminal, and returns what was printed.
+// runner returns a helper that runs commands against one temporary chain file
+// and keystore, exactly as a user would in a terminal, plus what was printed.
 func runner(t *testing.T) func(args ...string) (string, error) {
 	t.Helper()
+	dir := t.TempDir()
 	cfg := config.Default()
 	cfg.Difficulty = 2 // keep the suite fast
-	cfg.DataFile = filepath.Join(t.TempDir(), "chain.json")
+	cfg.DataFile = filepath.Join(dir, "chain.json")
+	cfg.KeyFile = filepath.Join(dir, "keys.json")
 
 	return func(args ...string) (string, error) {
 		var out bytes.Buffer
@@ -25,9 +27,23 @@ func runner(t *testing.T) func(args ...string) (string, error) {
 	}
 }
 
-// The end-to-end path from the README: fund, mine, transfer, mine, validate.
-func TestFullWalkthrough(t *testing.T) {
+// withKeys returns a runner that already has keys for alice and bob, since a
+// transfer cannot exist without the sender's key.
+func withKeys(t *testing.T) func(args ...string) (string, error) {
+	t.Helper()
 	tbc := runner(t)
+	for _, label := range []string{"alice", "bob"} {
+		if _, err := tbc("keygen", label); err != nil {
+			t.Fatalf("keygen %s: %v", label, err)
+		}
+	}
+	return tbc
+}
+
+// The end-to-end path from the README: keys, fund, mine, transfer, mine,
+// validate.
+func TestFullWalkthrough(t *testing.T) {
+	tbc := withKeys(t)
 
 	if _, err := tbc("faucet", "alice", "100"); err != nil {
 		t.Fatalf("faucet: %v", err)
@@ -46,6 +62,7 @@ func TestFullWalkthrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("balance: %v", err)
 	}
+	// Balances are keyed by address; the keystore annotates the ones it knows.
 	for _, want := range []string{"alice", "70", "bob", "30", "total supply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("balance output is missing %q:\n%s", want, out)
@@ -68,22 +85,30 @@ func TestFullWalkthrough(t *testing.T) {
 
 // State must survive between invocations: each call above re-read the file.
 func TestStatePersistsBetweenCommands(t *testing.T) {
-	tbc := runner(t)
+	tbc := withKeys(t)
+
+	address, err := tbc("keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(address, "alice") {
+		t.Fatalf("the keystore did not survive to the next command:\n%s", address)
+	}
+
 	if _, err := tbc("faucet", "alice", "100"); err != nil {
 		t.Fatal(err)
 	}
-
 	out, err := tbc("pending")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "alice") {
+	if !strings.Contains(out, "100") {
 		t.Errorf("a queued transaction did not survive to the next command:\n%s", out)
 	}
 }
 
 func TestCommandsRejectBadInput(t *testing.T) {
-	tbc := runner(t)
+	tbc := withKeys(t)
 	if _, err := tbc("faucet", "alice", "100"); err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +124,10 @@ func TestCommandsRejectBadInput(t *testing.T) {
 		"overspend":           {"send", "alice", "bob", "1000"},
 		"unknown flag":        {"-nope", "print"},
 		"invalid difficulty":  {"-difficulty", "0", "mine"},
+		// Without the sender's private key there is no way to author a
+		// transfer at all: this is the point of signatures.
+		"sending from an account we hold no key for": {"send", "carol", "bob", "1"},
+		"duplicate key label":                        {"keygen", "alice"},
 	}
 	for name, args := range bad {
 		if _, err := tbc(args...); err == nil {
@@ -110,15 +139,20 @@ func TestCommandsRejectBadInput(t *testing.T) {
 // Tamper detection through the CLI: edit the saved JSON, then validate.
 // This is the experiment reproduced in docs/RESEARCH.md.
 func TestValidateReportsTamperingInTheSavedFile(t *testing.T) {
+	dir := t.TempDir()
 	cfg := config.Default()
 	cfg.Difficulty = 2
-	cfg.DataFile = filepath.Join(t.TempDir(), "chain.json")
+	cfg.DataFile = filepath.Join(dir, "chain.json")
+	cfg.KeyFile = filepath.Join(dir, "keys.json")
 	run := func(args ...string) (string, error) {
 		var out bytes.Buffer
 		err := Run(args, &out, cfg)
 		return out.String(), err
 	}
 
+	if _, err := run("keygen", "alice"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := run("faucet", "alice", "100"); err != nil {
 		t.Fatal(err)
 	}

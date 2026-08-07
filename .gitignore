@@ -3,8 +3,10 @@
 tbc
 tbc.exe
 
-# Local runtime state: the chain database and local secrets
+# Local runtime state: the chain database, private keys and local secrets.
+# Never commit a keystore, even a toy one.
 /data/
+*keys.json
 *.env
 !.env.example
 

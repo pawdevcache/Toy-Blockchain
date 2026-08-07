@@ -16,8 +16,8 @@ import (
 //	block 2: coinbase reward + alice pays bob 30
 func honestChain(t *testing.T) []block.Block {
 	t.Helper()
-	c := mineFunded(t)
-	if err := c.AddTransaction(ledger.NewTransfer("alice", "bob", 30, 1)); err != nil {
+	c, alice, bob := mineFunded(t)
+	if err := c.AddTransaction(alice.pay(bob.Address(), 30, 1)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Mine(context.Background()); err != nil {
@@ -155,8 +155,11 @@ func TestValidateCatchesAFullyMinedButUnaffordableBlock(t *testing.T) {
 	blocks := honestChain(t)
 	tip := blocks[len(blocks)-1]
 
+	// Properly signed by mallory, who simply does not have the coins. A valid
+	// signature proves authorisation, never solvency.
+	mallory, victim := newActor(t), newActor(t)
 	forged := block.New(tip.Height+1, tip.Hash,
-		[]ledger.Transaction{ledger.NewTransfer("bob", "mallory", 999_999, 1)},
+		[]ledger.Transaction{mallory.pay(victim.Address(), 999_999, 1)},
 		tip.Difficulty, tip.Timestamp+1)
 	mined, err := miner.MineWith(context.Background(), forged, 1)
 	if err != nil {
